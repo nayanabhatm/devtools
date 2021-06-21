@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'package:devtools_app/mustang_store_screen.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pedantic/pedantic.dart';
@@ -633,6 +634,10 @@ List<DevToolsScreen> get defaultScreens {
     DevToolsScreen<VMDeveloperToolsController>(
       VMDeveloperToolsScreen(controller: vmDeveloperToolsController),
       controller: vmDeveloperToolsController,
+    ),
+    DevToolsScreen<void>(
+      const MustangStoreScreen(),
+      createController: () {},
     ),
     // Show the sample DevTools screen.
     if (debugEnableSampleScreen && (kDebugMode || kProfileMode))
