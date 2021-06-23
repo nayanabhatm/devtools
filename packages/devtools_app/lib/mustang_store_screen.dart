@@ -29,13 +29,19 @@ Future<List<Map<String, dynamic>>> getStoreData() async {
   final List<dynamic> storeElements = mustangStore.elements;
   final List<Map<String, dynamic>> storeData = [];
 
-  for (var i = 0; i < storeElements.length; i++) {
+  for (var i = 0; i < storeElements?.length ?? 0; i++) {
     if (storeElements[i] != null) {
       final Instance eleRef =
           await evalOnDartLibrary.getInstance(storeElements[i], Disposable());
       final Map<String, dynamic> data = eleRef.toJson();
+      String className = data['class']['name'];
+      if (className.contains('\$')) {
+        className = className.split('\$')[1];
+      } else if (className.startsWith('_')) {
+        className = className.substring(1);
+      }
       final Map<String, dynamic> requiredData = {
-        'className': data['class']['name'],
+        'className': className,
         'fields': data['fields']?.map((e) {
               final Map<String, dynamic> typeClass =
                   e['decl']['declaredType']['typeClass'];
@@ -68,82 +74,76 @@ Future<List<Map<String, dynamic>>> getStoreData() async {
 }
 
 Future<List<Map<String, dynamic>>> getObjData(
-    Map<String, dynamic> instanceRefAsMap) async {
-  final evalOnDartLibrary = EvalOnDartLibrary(
-    ['package:mustang_core/src/state/wrench_store.dart'],
-    serviceManager.service,
-  );
+  Map<String, dynamic> instanceRefAsMap,
+) async {
+  if (instanceRefAsMap != null) {
+    final evalOnDartLibrary = EvalOnDartLibrary(
+      ['package:mustang_core/src/state/wrench_store.dart'],
+      serviceManager.service,
+    );
 
-  final InstanceRef instanceRef = InstanceRef.parse(instanceRefAsMap);
+    final InstanceRef instanceRef = InstanceRef.parse(instanceRefAsMap);
 
-  final Instance instance =
-      await evalOnDartLibrary.getInstance(instanceRef, Disposable());
+    final Instance instance =
+        await evalOnDartLibrary.getInstance(instanceRef, Disposable());
 
-  final Map<String, dynamic> data = instance.toJson();
-  List<Map<String, dynamic>> fields = [];
+    final Map<String, dynamic> data = instance.toJson();
+    List<Map<String, dynamic>> fields = [];
 
-  for (var i = 0; i < data['fields'].length ?? 0; i++) {
-    final Map<String, dynamic> typeClass =
-        data['fields'][i]['decl']['declaredType']['typeClass'];
-    String value;
-    if (typeClass != null) {
-      final String defaultValue = data['fields'][i]['value']['valueAsString'];
-      value = primitiveDataType.contains(typeClass['name'])
-          ? defaultValue
-          : 'None primitive dataType. Click to fetch';
-    }
-    final List<Map<String, dynamic>> listElements = [];
-    if (typeClass['name'] == 'List') {
-      final InstanceRef listInstanceRef =
-          InstanceRef.parse(data['fields'][i]['value']);
-      final Instance listInstance =
-          await evalOnDartLibrary.getInstance(listInstanceRef, Disposable());
-      for (var j = 0; j < listInstance.elements.length; j++) {
-        final Instance listElementInstance =
-            await evalOnDartLibrary.getInstance(
-          listInstance.elements[j],
-          Disposable(),
-        );
-        final Map<String, dynamic> data2 = listElementInstance.toJson();
-        final Map<String, dynamic> typeClass2 =
+    if (data['fields'] != null) {
+      for (var i = 0; i < data['fields']?.length ?? 0; i++) {
+        final Map<String, dynamic> typeClass =
             data['fields'][i]['decl']['declaredType']['typeClass'];
-        String value2;
-        if (typeClass2 != null) {
-          final String defaultValue2 =
-              data2['fields'][i]['value']['valueAsString'];
-          value2 = primitiveDataType.contains(typeClass2['name'])
-              ? defaultValue2
+        String value;
+        if (typeClass != null) {
+          final String defaultValue =
+              data['fields'][i]['value']['valueAsString'];
+          value = primitiveDataType.contains(typeClass['name'])
+              ? defaultValue
               : 'None primitive dataType. Click to fetch';
         }
-        listElements.add({
-          'name': data2['fields'][i]['decl']['name'],
-          'type': typeClass2 != null ? typeClass2['name'] : 'unknown',
-          'ref': data2['fields'][i]['value'],
-          'value': value2
-        });
+        final List<Map<String, dynamic>> listElements = [];
+        if (typeClass['name'] == 'List') {
+          final InstanceRef listInstanceRef =
+              InstanceRef.parse(data['fields'][i]['value']);
+          final Instance listInstance = await evalOnDartLibrary.getInstance(
+              listInstanceRef, Disposable());
+          Map<String, dynamic> listInstanceAsMap = listInstance.toJson();
+          for (var j = 0; j < listInstanceAsMap['elements']?.length ?? 0; j++) {
+            Map<String, dynamic> temp = listInstanceAsMap['elements'][j];
+            List<Map<String, dynamic>> resp = await getObjData(temp);
+            listElements.addAll(resp);
+          }
+          fields.addAll(listElements);
+        } else {
+          fields.add({
+            'name': data['fields'][i]['decl']['name'],
+            'type': typeClass != null ? typeClass['name'] : 'unknown',
+            'ref': data['fields'][i]['value'],
+            'value': value,
+          });
+        }
       }
-      fields.addAll(listElements);
-    } else {
-      fields.add({
-        'name': data['fields'][i]['decl']['name'],
-        'type': typeClass != null ? typeClass['name'] : 'unknown',
-        'ref': data['fields'][i]['value'],
-        'value': value,
-      });
     }
+    String className = data['class']['name'];
+    if (className.contains('\$')) {
+      className = className.split('\$')[1];
+    } else if (className.startsWith('_')) {
+      className = className.substring(1);
+    }
+    final Map<String, dynamic> requiredData = {
+      'className': className,
+      'type': data['type'],
+      'name': className,
+      'ref': data,
+      'fields': fields,
+    };
+
+    return [requiredData];
+    // return instance.toJson();
+  } else {
+    return <Map<String, dynamic>>[];
   }
-  final Map<String, dynamic> requiredData = {
-    'className': data['class']['name'],
-    'fields': fields,
-  };
-
-  return [requiredData];
-  // return instance.toJson();
-}
-
-Future<List<Map<String, dynamic>>> getBuiltListData() {
-  // TODO: get data for the builtlist
-  return null;
 }
 
 Widget _futureBuilder(
