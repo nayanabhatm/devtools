@@ -287,9 +287,8 @@ class _MustangExpandedTileState extends State<MustangExpandedTile> {
 // required to prevent garbage collection resulting in sentinel error
 Future<InstanceRef> tagToPersist(
   InstanceRef instanceRef,
-  EvalOnDartLibrary widgetInspectorEval, {
-  dispose = false,
-}) async {
+  EvalOnDartLibrary widgetInspectorEval,
+) async {
   final InstanceRef ref = await widgetInspectorEval.safeEval(
     'WidgetInspectorService.instance.toId(instanceRef, "heehaww")',
     isAlive: Disposable(),
