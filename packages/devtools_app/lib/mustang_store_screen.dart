@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:vm_service/vm_service.dart';
 import 'package:flutter_json_widget/flutter_json_widget.dart';
 
+// garbage collector issue: https://github.com/dart-lang/sdk/blob/master/runtime/vm/service/service.md
+
 const List<String> primitiveDataType = ['bool', 'int', 'double', 'String'];
 
 Future<List<Map<String, dynamic>>> getStoreData() async {
@@ -46,7 +48,11 @@ Future<List<Map<String, dynamic>>> getStoreData() async {
               }
               return {
                 'name': e['decl']['name'],
-                'type': typeClass != null ? typeClass['name'] : 'unknown',
+                'type': typeClass != null
+                    ? typeClass['name'] == 'BuiltList'
+                        ? e['decl']['declaredType']['name']
+                        : typeClass['name']
+                    : 'unknown',
                 'ref': e['value'],
                 'value': value,
               };
@@ -74,53 +80,70 @@ Future<List<Map<String, dynamic>>> getObjData(
       await evalOnDartLibrary.getInstance(instanceRef, Disposable());
 
   final Map<String, dynamic> data = instance.toJson();
-  // List<Map<String, dynamic>> requiredData = [];
+  List<Map<String, dynamic>> fields = [];
 
+  for (var i = 0; i < data['fields'].length ?? 0; i++) {
+    final Map<String, dynamic> typeClass =
+        data['fields'][i]['decl']['declaredType']['typeClass'];
+    String value;
+    if (typeClass != null) {
+      final String defaultValue = data['fields'][i]['value']['valueAsString'];
+      value = primitiveDataType.contains(typeClass['name'])
+          ? defaultValue
+          : 'None primitive dataType. Click to fetch';
+    }
+    final List<Map<String, dynamic>> listElements = [];
+    if (typeClass['name'] == 'List') {
+      final InstanceRef listInstanceRef =
+          InstanceRef.parse(data['fields'][i]['value']);
+      final Instance listInstance =
+          await evalOnDartLibrary.getInstance(listInstanceRef, Disposable());
+      for (var j = 0; j < listInstance.elements.length; j++) {
+        final Instance listElementInstance =
+            await evalOnDartLibrary.getInstance(
+          listInstance.elements[j],
+          Disposable(),
+        );
+        final Map<String, dynamic> data2 = listElementInstance.toJson();
+        final Map<String, dynamic> typeClass2 =
+            data['fields'][i]['decl']['declaredType']['typeClass'];
+        String value2;
+        if (typeClass2 != null) {
+          final String defaultValue2 =
+              data2['fields'][i]['value']['valueAsString'];
+          value2 = primitiveDataType.contains(typeClass2['name'])
+              ? defaultValue2
+              : 'None primitive dataType. Click to fetch';
+        }
+        listElements.add({
+          'name': data2['fields'][i]['decl']['name'],
+          'type': typeClass2 != null ? typeClass2['name'] : 'unknown',
+          'ref': data2['fields'][i]['value'],
+          'value': value2
+        });
+      }
+      fields.addAll(listElements);
+    } else {
+      fields.add({
+        'name': data['fields'][i]['decl']['name'],
+        'type': typeClass != null ? typeClass['name'] : 'unknown',
+        'ref': data['fields'][i]['value'],
+        'value': value,
+      });
+    }
+  }
   final Map<String, dynamic> requiredData = {
     'className': data['class']['name'],
-    'fields': data['fields']?.map((e) {
-          final Map<String, dynamic> typeClass =
-              e['decl']['declaredType']['typeClass'];
-          String value;
-          if (typeClass != null) {
-            final String defaultValue = e['value']['valueAsString'];
-            value = primitiveDataType.contains(typeClass['name'])
-                ? defaultValue
-                : 'None primitive dataType. Click to fetch';
-          }
-          return {
-            'name': e['decl']['name'],
-            'type': typeClass != null ? typeClass['name'] : 'unknown',
-            'ref': e['value'],
-            'value': value,
-          };
-        })?.toList() ??
-        [],
+    'fields': fields,
   };
-  // data['fields']?.forEach(
-  //   (e) {
-  //     print(e);
-  //     final Map<String, dynamic> typeClass =
-  //         e['decl']['declaredType']['typeClass'];
-  //     String value;
-  //     if (typeClass != null) {
-  //       final String defaultValue = e['value']['valueAsString'];
-  //       value = primitiveDataType.contains(typeClass['name'])
-  //           ? defaultValue
-  //           : 'None primitive dataType. Click to fetch';
-  //     }
-  //     Map<String, dynamic> t = {
-  //       'className': data['class']['name'],
-  //       'name': e['decl']['name'],
-  //       'type': typeClass != null ? typeClass['name'] : 'unknown',
-  //       'ref': e['value'],
-  //       'value': value,
-  //     };
-  //     requiredData.add(t);
-  //   },
-  // );
+
   return [requiredData];
   // return instance.toJson();
+}
+
+Future<List<Map<String, dynamic>>> getBuiltListData() {
+  // TODO: get data for the builtlist
+  return null;
 }
 
 Widget _futureBuilder(
@@ -202,7 +225,6 @@ class StoreScreen extends StatefulWidget {
 
 class _StoreScreenState extends State<StoreScreen> {
   Map<String, dynamic> _modelData;
-  bool isBusy = true;
   Widget _body;
   Timer _timer;
   String _filterText = '';
@@ -210,12 +232,6 @@ class _StoreScreenState extends State<StoreScreen> {
   void setModelData(Map<String, dynamic> modelData) {
     setState(() {
       _modelData = modelData;
-    });
-  }
-
-  void updateBusyStatus(bool status) {
-    setState(() {
-      isBusy = status;
     });
   }
 
@@ -236,7 +252,6 @@ class _StoreScreenState extends State<StoreScreen> {
             setModelData,
             filterString: _filterText,
           );
-          isBusy = false;
         },
       ),
     );
@@ -277,30 +292,13 @@ class _StoreScreenState extends State<StoreScreen> {
                       onChanged: setFilterText,
                     ),
                   ),
-                  // const SizedBox(
-                  //   width: 5,
-                  // ),
-                  // IconButton(
-                  //   icon: const Icon(
-                  //     Icons.refresh,
-                  //     size: 30,
-                  //   ),
-                  //   onPressed: () => setState(
-                  //     () {
-                  //       _body = _futureBuilder(setModelData);
-                  //     },
-                  //   ),
-                  // ),
-                  // const SizedBox(
-                  //   width: 10,
-                  // ),
                 ],
               ),
               Divider(
                 color: Theme.of(context).dividerColor,
               ),
               Expanded(
-                child: isBusy
+                child: _body == null
                     ? const Center(
                         child: Text(
                           'Loading! HEEEE-HAAYYY',
@@ -348,6 +346,7 @@ List<Widget> dataViewer(BuildContext context, Map<String, dynamic> modelData) {
   if (className.contains('\$')) {
     className = className.split('\$')[1];
   }
+
   final List<Widget> modelDataWidgets = [
     Container(
       decoration: BoxDecoration(
@@ -400,7 +399,6 @@ class _MustangExpandedTileState extends State<MustangExpandedTile> {
             AsyncSnapshot<List<Map<String, dynamic>>> storeData,
           ) {
             final List<Map<String, dynamic>> data = storeData?.data;
-            // print(data);
             return ListView.builder(
               physics: const NeverScrollableScrollPhysics(),
               shrinkWrap: true,
