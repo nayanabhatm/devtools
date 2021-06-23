@@ -8,8 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:vm_service/vm_service.dart';
 import 'package:flutter_json_widget/flutter_json_widget.dart';
 
-// garbage collector issue: https://github.com/dart-lang/sdk/blob/master/runtime/vm/service/service.md
-
 const List<String> primitiveDataType = ['bool', 'int', 'double', 'String'];
 
 Future<List<Map<String, dynamic>>> getStoreData() async {
@@ -22,6 +20,8 @@ Future<List<Map<String, dynamic>>> getStoreData() async {
     'WrenchStore.storeState()',
     isAlive: Disposable(),
   );
+
+  // todo: // garbage collector issue: https://github.com/dart-lang/sdk/blob/master/runtime/vm/service/service.md
 
   final Instance mustangStore =
       await evalOnDartLibrary.getInstance(mustangeStoreRef, Disposable());
@@ -148,6 +148,7 @@ Future<List<Map<String, dynamic>>> getObjData(
 
 Widget _futureBuilder(
   Function(Map<String, dynamic> modelData) onPress, {
+  Map<String, dynamic> selectedModelData,
   String filterString = '',
 }) {
   return FutureBuilder(
@@ -168,9 +169,11 @@ Widget _futureBuilder(
         itemCount: data?.length ?? 0,
         itemBuilder: (BuildContext _, index) {
           String className = data[index]['className'];
-          // String className = data[index]['class']['name'];
-          if (className.contains('\$')) {
-            className = className.split('\$')[1];
+          if (selectedModelData != null &&
+              className == selectedModelData['className']) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              onPress(data[index]);
+            });
           }
           return Padding(
             padding: const EdgeInsets.all(3),
@@ -250,6 +253,7 @@ class _StoreScreenState extends State<StoreScreen> {
         () {
           _body = _futureBuilder(
             setModelData,
+            selectedModelData: _modelData,
             filterString: _filterText,
           );
         },
@@ -268,9 +272,6 @@ class _StoreScreenState extends State<StoreScreen> {
     return Row(
       children: [
         Container(
-          // decoration: BoxDecoration(
-          //   border: Border.all(color: Theme.of(context).dividerColor),
-          // ),
           width: 400,
           child: Column(
             children: <Widget>[
