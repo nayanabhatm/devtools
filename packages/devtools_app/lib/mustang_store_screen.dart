@@ -83,7 +83,7 @@ class _StoreScreenState extends State<StoreScreen> {
   void initState() {
     super.initState();
     _timer = Timer.periodic(
-      const Duration(seconds: 2), // polling data every 2 seconds from the store
+      const Duration(seconds: 2), // polling data every 2 sec from the store
       (Timer timer) => setState(
         () {
           _body = modelListBuilder(
@@ -200,6 +200,10 @@ List<Widget> dataViewer(BuildContext context, Map<String, dynamic> modelData,
         ),
       ),
       child: ListTile(
+        leading: const Icon(
+          Icons.arrow_right_alt_outlined,
+          color: Colors.greenAccent,
+        ),
         title: Text(
           '$className',
           style: Theme.of(context).textTheme.headline5,
@@ -306,18 +310,22 @@ Future<List<Map<String, dynamic>>> getStoreData(
     isAlive: Disposable(),
   );
 
-  final Instance mustangStore =
-      await mustangEval.getInstance(mustangeStoreRef, Disposable());
+  final Instance mustangStore = await mustangEval.getInstance(
+    mustangeStoreRef,
+    Disposable(),
+  );
 
   final List<dynamic> storeElements = mustangStore.elements;
   final List<Map<String, dynamic>> storeData = [];
 
   for (var i = 0; i < storeElements?.length ?? 0; i++) {
     if (storeElements[i] != null) {
-      final Instance eleRef =
-          await mustangEval.getInstance(storeElements[i], Disposable());
-      final Map<String, dynamic> data = eleRef.toJson();
-      String className = data['class']['name'];
+      final Instance eleRef = await mustangEval.getInstance(
+        storeElements[i],
+        Disposable(),
+      );
+      // final Map<String, dynamic> data = eleRef.toJson();
+      String className = eleRef.classRef.name;
       if (className.contains('\$')) {
         className = className.split('\$')[1];
       } else if (className.startsWith('_')) {
@@ -325,24 +333,23 @@ Future<List<Map<String, dynamic>>> getStoreData(
       }
       final Map<String, dynamic> requiredData = {
         'className': className,
-        'fields': data['fields']?.map((e) {
-              final Map<String, dynamic> typeClass =
-                  e['decl']['declaredType']['typeClass'];
+        'fields': eleRef?.fields?.map((e) {
+              final ClassRef typeClass = e.decl.declaredType.typeClass;
               String value;
               if (typeClass != null) {
-                final String defaultValue = e['value']['valueAsString'];
-                value = primitiveDataType.contains(typeClass['name'])
+                final String defaultValue = e.value.valueAsString;
+                value = primitiveDataType.contains(typeClass.name)
                     ? defaultValue
                     : 'None primitive dataType. Click to fetch';
               }
               return {
-                'name': e['decl']['name'],
+                'name': e.decl.name,
                 'type': typeClass != null
-                    ? typeClass['name'] == 'BuiltList'
-                        ? e['decl']['declaredType']['name']
-                        : typeClass['name']
+                    ? typeClass.name == 'BuiltList'
+                        ? e.decl.declaredType.name
+                        : typeClass.name
                     : 'unknown',
-                'ref': e['value'],
+                'ref': e.value,
                 'value': value,
               };
             })?.toList() ??
@@ -357,13 +364,11 @@ Future<List<Map<String, dynamic>>> getStoreData(
 
 // to poll data for a non-primitive datatype using InstanceRef
 Future<List<Map<String, dynamic>>> getObjData(
-  Map<String, dynamic> instanceRefAsMap,
+  InstanceRef instanceRef,
   EvalOnDartLibrary mustandEval,
   EvalOnDartLibrary widgetInspectorEval,
 ) async {
-  if (instanceRefAsMap != null) {
-    final InstanceRef instanceRef = InstanceRef.parse(instanceRefAsMap);
-
+  if (instanceRef != null) {
     // mark object to make sure its not garbage collected
     final InstanceRef persistentRef = await tagToPersist(
       instanceRef,
@@ -383,32 +388,31 @@ Future<List<Map<String, dynamic>>> getObjData(
       Disposable(),
     );
 
-    final Map<String, dynamic> data = instance.toJson();
     final List<Map<String, dynamic>> fields = [];
 
-    if (data['fields'] != null) {
-      for (var i = 0; i < data['fields']?.length ?? 0; i++) {
-        final Map<String, dynamic> typeClass =
-            data['fields'][i]['decl']['declaredType']['typeClass'];
+    if (instance.fields != null) {
+      for (var i = 0; i < instance?.fields?.length ?? 0; i++) {
+        final ClassRef typeClass =
+            instance?.fields[i]?.decl?.declaredType?.typeClass;
         String value;
         if (typeClass != null) {
           final String defaultValue =
-              data['fields'][i]['value']['valueAsString'];
-          value = primitiveDataType.contains(typeClass['name'])
+              instance?.fields[i]?.value?.valueAsString ?? 'unknown';
+          value = primitiveDataType.contains(typeClass.name)
               ? defaultValue
               : 'None primitive dataType. Click to fetch';
         }
         final List<Map<String, dynamic>> listElements = [];
-        if (typeClass['name'] == 'List') {
-          final InstanceRef listInstanceRef =
-              InstanceRef.parse(data['fields'][i]['value']);
-          final Instance listInstance =
-              await mustandEval.getInstance(listInstanceRef, Disposable());
-          final Map<String, dynamic> listInstanceAsMap = listInstance.toJson();
-          for (var j = 0; j < listInstanceAsMap['elements']?.length ?? 0; j++) {
-            final Map<String, dynamic> temp = listInstanceAsMap['elements'][j];
+        // TODO: add map support here
+        if (typeClass.name == 'List') {
+          final InstanceRef listInstanceRef = instance?.fields[i]?.value;
+          final Instance listInstance = await mustandEval.getInstance(
+            listInstanceRef,
+            Disposable(),
+          );
+          for (var j = 0; j < listInstance?.elements?.length ?? 0; j++) {
             final List<Map<String, dynamic>> resp = await getObjData(
-              temp,
+              listInstance.elements[j],
               mustandEval,
               widgetInspectorEval,
             );
@@ -417,15 +421,15 @@ Future<List<Map<String, dynamic>>> getObjData(
           fields.addAll(listElements);
         } else {
           fields.add({
-            'name': data['fields'][i]['decl']['name'],
-            'type': typeClass != null ? typeClass['name'] : 'unknown',
-            'ref': data['fields'][i]['value'],
+            'name': instance?.fields[i]?.decl?.name ?? 'unknown',
+            'type': typeClass != null ? typeClass.name : 'unknown',
+            'ref': instance.fields[i].value,
             'value': value,
           });
         }
       }
     }
-    String className = data['class']['name'];
+    String className = instance.classRef.name;
     if (className.contains('\$')) {
       className = className.split('\$')[1];
     } else if (className.startsWith('_')) {
@@ -433,9 +437,9 @@ Future<List<Map<String, dynamic>>> getObjData(
     }
     final Map<String, dynamic> requiredData = {
       'className': className,
-      'type': data['type'],
+      'type': instance.type,
       'name': className,
-      'ref': data,
+      'ref': instance,
       'fields': fields,
     };
 
@@ -448,12 +452,12 @@ Future<List<Map<String, dynamic>>> getObjData(
 
 // build a widget for an non-primitive datatype
 Widget objBuilder(
-  Map<String, dynamic> instanceRefAsMap,
+  InstanceRef instanceRef,
   EvalOnDartLibrary mustangEval,
   EvalOnDartLibrary widgetInspectorEval,
 ) {
   return FutureBuilder(
-    future: getObjData(instanceRefAsMap, mustangEval, widgetInspectorEval),
+    future: getObjData(instanceRef, mustangEval, widgetInspectorEval),
     builder: (
       BuildContext context,
       AsyncSnapshot<List<Map<String, dynamic>>> storeData,
@@ -506,7 +510,10 @@ Widget modelListBuilder(
     ) {
       final List<Map<String, dynamic>> data = storeData?.data
               ?.where(
-                (element) => element['className'].contains(filterString),
+                (element) => element['className']
+                    .toString()
+                    .toLowerCase()
+                    .contains(filterString),
               )
               ?.toList() ??
           [];
