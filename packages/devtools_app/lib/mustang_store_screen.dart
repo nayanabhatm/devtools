@@ -91,6 +91,7 @@ class _StoreScreenState extends State<StoreScreen> {
             selectedModelData: _modelData,
             filterString: _filterText,
             mustandEval: widget.mustangEval,
+            widgetInspectorEval: widget.widgetInspectorEval,
           );
         },
       ),
@@ -304,6 +305,7 @@ Future<InstanceRef> tagToPersist(
 // used to poll data from the store
 Future<List<Map<String, dynamic>>> getStoreData(
   EvalOnDartLibrary mustangEval,
+  EvalOnDartLibrary widgetInspectorEval,
 ) async {
   final InstanceRef mustangeStoreRef = await mustangEval.safeEval(
     'WrenchStore.storeState()',
@@ -331,29 +333,47 @@ Future<List<Map<String, dynamic>>> getStoreData(
       } else if (className.startsWith('_')) {
         className = className.substring(1);
       }
+      final List<Map<String, dynamic>> fields = [];
+      if (className == 'BuiltList') {
+        className = '$className: ${eleRef.identityHashCode}';
+        final List<Map<String, dynamic>> resp = await getObjData(
+          eleRef,
+          mustangEval,
+          widgetInspectorEval,
+        );
+        fields.addAll(resp);
+      } else {
+        for (var j = 0; j < eleRef.fields.length; j++) {
+          final ClassRef typeClass =
+              eleRef.fields[j].decl.declaredType.typeClass;
+          String value;
+          if (typeClass != null) {
+            final String defaultValue = eleRef.fields[j].value.valueAsString;
+            value = primitiveDataType.contains(typeClass.name)
+                ? defaultValue
+                : 'None primitive dataType. Click to fetch';
+          }
+          fields.add(
+            {
+              'name': eleRef.fields[j].decl.name,
+              'type': typeClass != null
+                  ? typeClass.name == 'BuiltList'
+                      ? eleRef.fields[j].decl.declaredType.name
+                      : typeClass.name
+                  : 'unknown',
+              'ref': eleRef.fields[j].value,
+              'value': value,
+            },
+          );
+        }
+      }
+
       final Map<String, dynamic> requiredData = {
         'className': className,
-        'fields': eleRef?.fields?.map((e) {
-              final ClassRef typeClass = e.decl.declaredType.typeClass;
-              String value;
-              if (typeClass != null) {
-                final String defaultValue = e.value.valueAsString;
-                value = primitiveDataType.contains(typeClass.name)
-                    ? defaultValue
-                    : 'None primitive dataType. Click to fetch';
-              }
-              return {
-                'name': e.decl.name,
-                'type': typeClass != null
-                    ? typeClass.name == 'BuiltList'
-                        ? e.decl.declaredType.name
-                        : typeClass.name
-                    : 'unknown',
-                'ref': e.value,
-                'value': value,
-              };
-            })?.toList() ??
-            [],
+        'type': eleRef.type,
+        'name': className,
+        'ref': eleRef,
+        'fields': fields,
       };
       storeData.add(requiredData);
       // storeDat.add(data);
@@ -422,7 +442,11 @@ Future<List<Map<String, dynamic>>> getObjData(
         } else {
           fields.add({
             'name': instance?.fields[i]?.decl?.name ?? 'unknown',
-            'type': typeClass != null ? typeClass.name : 'unknown',
+            'type': typeClass != null
+                ? typeClass.name == 'BuiltList'
+                    ? instance.fields[i].decl.declaredType.name
+                    : typeClass.name
+                : 'unknown',
             'ref': instance.fields[i].value,
             'value': value,
           });
@@ -501,19 +525,23 @@ Widget modelListBuilder(
   Map<String, dynamic> selectedModelData,
   String filterString = '',
   EvalOnDartLibrary mustandEval,
+  EvalOnDartLibrary widgetInspectorEval,
 }) {
   return FutureBuilder(
-    future: getStoreData(mustandEval),
+    future: getStoreData(
+      mustandEval,
+      widgetInspectorEval,
+    ),
     builder: (
       BuildContext context,
       AsyncSnapshot<List<Map<String, dynamic>>> storeData,
     ) {
       final List<Map<String, dynamic>> data = storeData?.data
               ?.where(
-                (element) => element['className']
-                    .toString()
-                    .toLowerCase()
-                    .contains(filterString),
+                (element) =>
+                    element['className'].toString().toLowerCase().contains(
+                          filterString.toLowerCase(),
+                        ),
               )
               ?.toList() ??
           [];
