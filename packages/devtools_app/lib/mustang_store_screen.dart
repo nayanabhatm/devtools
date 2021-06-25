@@ -424,7 +424,7 @@ Future<List<Map<String, dynamic>>> getObjData(
         }
         final List<Map<String, dynamic>> listElements = [];
         // TODO: add map support here
-        if (typeClass.name == 'List') {
+        if (typeClass?.name == 'List') {
           final InstanceRef listInstanceRef = instance?.fields[i]?.value;
           final Instance listInstance = await mustandEval.getInstance(
             listInstanceRef,
